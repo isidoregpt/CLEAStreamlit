@@ -1,0 +1,11 @@
+streamlit
+streamlit-drawable-canvas
+streamlit-autorefresh
+pillow
+numpy
+pandas
+astropy
+sunpy
+matplotlib
+scipy
+scikit-image
