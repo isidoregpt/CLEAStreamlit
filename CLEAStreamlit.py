@@ -4,6 +4,7 @@ from PIL import Image, ImageDraw
 import numpy as np
 import pandas as pd
 from io import BytesIO
+import base64
 from astropy.io import fits
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
@@ -19,6 +20,31 @@ from astropy.time import Time
 # Configure page layout
 st.set_page_config(layout="wide")
 MAX_DISPLAY_WIDTH = 800
+
+# Add CSS for overlay positioning
+st.markdown("""
+<style>
+.image-canvas-container {
+    position: relative;
+    width: fit-content;
+    margin: 0;
+    padding: 0;
+}
+.image-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+}
+.canvas-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    background-color: transparent !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ------------------------------------------------------------------
 #                    NEW HELPER FUNCTIONS FOR ZOOM VIEWER
@@ -443,17 +469,37 @@ with left_col:
         st.image(resized_img, use_column_width=False, width=resized_img.width)
     else:
         drawing_mode = st.session_state['selection_mode']
+        
+        # Create container with relative positioning
+        st.markdown('<div class="image-canvas-container">', unsafe_allow_html=True)
+        
+        # Display image with absolute positioning
+        buffered = BytesIO()
+        resized_img.save(buffered, format="PNG")
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        st.markdown(
+            f'<img src="data:image/png;base64,{img_str}" width="{resized_img.width}" height="{resized_img.height}" class="image-layer">',
+            unsafe_allow_html=True
+        )
+        
+        # Add the canvas with absolute positioning and transparent background
         canvas_result = st_canvas(
             fill_color="rgba(255,0,255,0.3)",
             stroke_width=2,
             stroke_color="#FF00FF",
-            background_image=resized_img,
-            update_streamlit=True,
+            background_color="rgba(0,0,0,0)",  # Transparent background
             height=resized_img.height,
             width=resized_img.width,
             drawing_mode=drawing_mode,
-            key="canvas_measurement"
+            key="canvas_measurement",
+            display_toolbar=True
         )
+        
+        # Close the container
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Add some space below to ensure subsequent elements are positioned correctly
+        st.markdown('<div style="height: {}px"></div>'.format(resized_img.height + 10), unsafe_allow_html=True)
 
 # Right column: Data, measurements, and (if applicable) the zoom viewer
 with right_col:
