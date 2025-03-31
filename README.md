@@ -3,7 +3,7 @@ An app with similar functionality to CLEA
 
 Advanced Solar Rotation Analysis
 A Streamlit web application for tracking and analyzing solar features across multiple images to study solar rotation patterns.
-Show Image
+
 Overview
 This tool allows astronomers, solar physicists, and enthusiasts to:
 
