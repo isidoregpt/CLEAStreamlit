@@ -4,7 +4,6 @@ from PIL import Image, ImageDraw
 import numpy as np
 import pandas as pd
 from io import BytesIO
-import base64
 from astropy.io import fits
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
@@ -20,31 +19,6 @@ from astropy.time import Time
 # Configure page layout
 st.set_page_config(layout="wide")
 MAX_DISPLAY_WIDTH = 800
-
-# Add CSS for overlay positioning
-st.markdown("""
-<style>
-.image-canvas-container {
-    position: relative;
-    width: fit-content;
-    margin: 0;
-    padding: 0;
-}
-.image-layer {
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 1;
-}
-.canvas-layer {
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 2;
-    background-color: transparent !important;
-}
-</style>
-""", unsafe_allow_html=True)
 
 # ------------------------------------------------------------------
 #                    NEW HELPER FUNCTIONS FOR ZOOM VIEWER
@@ -466,55 +440,20 @@ if show_sun_boundary and cx is not None:
 with left_col:
     st.subheader(f"Current Image: {current_filename}")
     if st.session_state['animation_running']:
-        st.image(resized_img, use_container_width=False, width=resized_img.width)
+        st.image(resized_img, use_column_width=False, width=resized_img.width)
     else:
         drawing_mode = st.session_state['selection_mode']
-        
-        try:
-            # Try a direct approach first (this might work in some Streamlit Cloud environments)
-            canvas_result = st_canvas(
-                fill_color="rgba(255,0,255,0.3)",
-                stroke_width=2,
-                stroke_color="#FF00FF",
-                background_image=resized_img,
-                update_streamlit=True,
-                height=resized_img.height,
-                width=resized_img.width,
-                drawing_mode=drawing_mode,
-                key="canvas_measurement"
-            )
-        except Exception as e:
-            st.error(f"Canvas error: {type(e).__name__}. Using fallback approach.")
-            
-            # Fallback approach using HTML and a separate canvas
-            st.image(resized_img, use_column_width=False, width=resized_img.width)
-            
-            # Create an alternative interface for point selection
-            st.write("**Click Selection Coordinates:**")
-            col1, col2 = st.columns(2)
-            with col1:
-                x_input = st.number_input("X coordinate:", 0, resized_img.width, resized_img.width//2)
-            with col2:
-                y_input = st.number_input("Y coordinate:", 0, resized_img.height, resized_img.height//2)
-                
-            submit_point = st.button("Use these coordinates")
-            
-            # Create a synthetic canvas_result to use with the rest of the code
-            class DummyObject:
-                def __init__(self, x, y):
-                    self.left = x
-                    self.top = y
-                    self.width = 10
-                    self.height = 10
-                    
-            class DummyCanvas:
-                def __init__(self, x, y, active=False):
-                    self.json_data = {"objects": [DummyObject(x, y)]} if active else {"objects": []}
-                    
-            if submit_point:
-                canvas_result = DummyCanvas(x_input, y_input, active=True)
-            else:
-                canvas_result = DummyCanvas(0, 0, active=False)
+        canvas_result = st_canvas(
+            fill_color="rgba(255,0,255,0.3)",
+            stroke_width=2,
+            stroke_color="#FF00FF",
+            background_image=resized_img,
+            update_streamlit=True,
+            height=resized_img.height,
+            width=resized_img.width,
+            drawing_mode=drawing_mode,
+            key="canvas_measurement"
+        )
 
 # Right column: Data, measurements, and (if applicable) the zoom viewer
 with right_col:
