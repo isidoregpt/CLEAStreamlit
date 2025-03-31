@@ -470,36 +470,51 @@ with left_col:
     else:
         drawing_mode = st.session_state['selection_mode']
         
-        # Create container with relative positioning
-        st.markdown('<div class="image-canvas-container">', unsafe_allow_html=True)
-        
-        # Display image with absolute positioning
-        buffered = BytesIO()
-        resized_img.save(buffered, format="PNG")
-        img_str = base64.b64encode(buffered.getvalue()).decode()
-        st.markdown(
-            f'<img src="data:image/png;base64,{img_str}" width="{resized_img.width}" height="{resized_img.height}" class="image-layer">',
-            unsafe_allow_html=True
-        )
-        
-        # Add the canvas with absolute positioning and transparent background
-        canvas_result = st_canvas(
-            fill_color="rgba(255,0,255,0.3)",
-            stroke_width=2,
-            stroke_color="#FF00FF",
-            background_color="rgba(0,0,0,0)",  # Transparent background
-            height=resized_img.height,
-            width=resized_img.width,
-            drawing_mode=drawing_mode,
-            key="canvas_measurement",
-            display_toolbar=True
-        )
-        
-        # Close the container
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Add some space below to ensure subsequent elements are positioned correctly
-        st.markdown('<div style="height: {}px"></div>'.format(resized_img.height + 10), unsafe_allow_html=True)
+        try:
+            # Try a direct approach first (this might work in some Streamlit Cloud environments)
+            canvas_result = st_canvas(
+                fill_color="rgba(255,0,255,0.3)",
+                stroke_width=2,
+                stroke_color="#FF00FF",
+                background_image=resized_img,
+                update_streamlit=True,
+                height=resized_img.height,
+                width=resized_img.width,
+                drawing_mode=drawing_mode,
+                key="canvas_measurement"
+            )
+        except Exception as e:
+            st.error(f"Canvas error: {type(e).__name__}. Using fallback approach.")
+            
+            # Fallback approach using HTML and a separate canvas
+            st.image(resized_img, use_column_width=False, width=resized_img.width)
+            
+            # Create an alternative interface for point selection
+            st.write("**Click Selection Coordinates:**")
+            col1, col2 = st.columns(2)
+            with col1:
+                x_input = st.number_input("X coordinate:", 0, resized_img.width, resized_img.width//2)
+            with col2:
+                y_input = st.number_input("Y coordinate:", 0, resized_img.height, resized_img.height//2)
+                
+            submit_point = st.button("Use these coordinates")
+            
+            # Create a synthetic canvas_result to use with the rest of the code
+            class DummyObject:
+                def __init__(self, x, y):
+                    self.left = x
+                    self.top = y
+                    self.width = 10
+                    self.height = 10
+                    
+            class DummyCanvas:
+                def __init__(self, x, y, active=False):
+                    self.json_data = {"objects": [DummyObject(x, y)]} if active else {"objects": []}
+                    
+            if submit_point:
+                canvas_result = DummyCanvas(x_input, y_input, active=True)
+            else:
+                canvas_result = DummyCanvas(0, 0, active=False)
 
 # Right column: Data, measurements, and (if applicable) the zoom viewer
 with right_col:
