@@ -46,13 +46,13 @@ Python 3.7+
 pip
 
 Required Packages
-bashCopypip install streamlit streamlit-drawable-canvas streamlit-autorefresh pillow numpy pandas astropy sunpy matplotlib
+pip install streamlit streamlit-drawable-canvas streamlit-autorefresh pillow numpy pandas astropy sunpy matplotlib
 For the contour detection feature, additional dependencies are required:
-bashCopypip install scipy scikit-image
+pip install scipy scikit-image
 Usage
 
 Launch the application:
-bashCopystreamlit run solar_rotation_app.py
+streamlit run CLEAStreamlit.py
 
 Upload solar images via the sidebar:
 
