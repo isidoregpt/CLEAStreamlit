@@ -466,7 +466,7 @@ if show_sun_boundary and cx is not None:
 with left_col:
     st.subheader(f"Current Image: {current_filename}")
     if st.session_state['animation_running']:
-        st.image(resized_img, use_column_width=False, width=resized_img.width)
+        st.image(resized_img, use_container_width=False, width=resized_img.width)
     else:
         drawing_mode = st.session_state['selection_mode']
         
