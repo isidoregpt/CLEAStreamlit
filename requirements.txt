@@ -1,11 +1,11 @@
-streamlit>=1.31.0
+streamlit==1.31.0
 streamlit-drawable-canvas==0.9.3
-streamlit-autorefresh
-pillow>=9.5.0
-numpy>=1.24.0
-pandas>=2.0.0
-astropy>=6.0
-sunpy>=4.3.0
-matplotlib>=3.7.0
-scipy>=1.10.0
-scikit-image>=0.20.0,<1.0.
+streamlit-autorefresh==1.0.1
+pillow==11.2.1
+numpy==2.2.5
+pandas==2.2.3
+astropy==7.0.1
+sunpy==6.1.1
+matplotlib==3.10.1
+scipy==1.15.2
+scikit-image==0.20.0  # Using 0.20.0 instead of requiring 1.0+
