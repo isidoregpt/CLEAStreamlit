@@ -245,6 +245,64 @@ def create_sun_boundary(image, cx, cy, radius, width=2):
     draw.ellipse((left, top, right, bottom), outline=(255, 0, 0), width=width)
     return boundary_img
 
+def check_canvas_data(canvas_result, x_disp, y_disp, scaled_cx, scaled_cy, scaled_radius, radius_correction, center_x_offset, center_y_offset, disable_boundary_check, ratio, cx, cy, radius, obs_time):
+    """
+    Process the canvas data and return measurement information if valid.
+    """
+    # Check boundary using adjusted values
+    adjusted_cx = scaled_cx + center_x_offset
+    adjusted_cy = scaled_cy + center_y_offset
+    if disable_boundary_check or is_point_on_sun(
+        x_disp, y_disp,
+        scaled_cx, scaled_cy,
+        scaled_radius,
+        radius_correction=radius_correction,
+        x_offset=center_x_offset,
+        y_offset=center_y_offset
+    ):
+        st.write(f"**Display coords:** x = {x_disp:.2f}, y = {y_disp:.2f}")
+        x_orig = x_disp / ratio
+        y_orig = y_disp / ratio
+        st.write(f"**Original coords:** x = {x_orig:.2f}, y = {y_orig:.2f}")
+        lon, lat = accurate_pixel_to_heliographic(x_orig, y_orig, cx, cy, radius, obs_time)
+        st.write(f"**Heliographic:** Lon = {lon:.2f}°, Lat = {lat:.2f}°")
+        dist = np.hypot(x_orig - cx, y_orig - cy)
+        st.write(f"**Distance from center:** {dist:.1f} px ({dist/radius*100:.1f}% of radius)")
+        
+        st.write("---")
+        # Display the zoom viewer
+        zoom_img, (zleft, ztop) = extract_zoom_region(orig_img, x_orig, y_orig,
+                                                       zoom_size=st.session_state['zoom_size'],
+                                                       zoom_factor=st.session_state['zoom_factor'])
+        final_zoom = add_crosshair(zoom_img)
+        zoom_col, data_col = st.columns([1, 1])
+        with zoom_col:
+            st.image(final_zoom, caption="Zoomed Region")
+        with data_col:
+            st.write("### Measurement Data")
+            st.write(f"**Observation Time:** {obs_time.iso if obs_time else 'Unknown'}")
+            st.write(f"**Heliographic Coordinates:** Lon = {lon:.2f}°, Lat = {lat:.2f}°")
+            st.write(f"**Pixel Coords (Original):** ({x_orig:.2f}, {y_orig:.2f})")
+            label = st.text_input("Feature label:", value="", key="label_input")
+            if st.button("Record Measurement", key="record_btn"):
+                measurement = {
+                    "Image": current_filename,
+                    "Observation Time": obs_time.iso if obs_time else "Unknown",
+                    "Pixel X (orig)": x_orig,
+                    "Pixel Y (orig)": y_orig,
+                    "Helio Longitude": lon,
+                    "Helio Latitude": lat,
+                    "Distance (% radius)": dist/radius*100,
+                    "Label": label
+                }
+                st.session_state['measurements'].append(measurement)
+                st.success("Measurement recorded!")
+        return True
+    else:
+        st.warning("Selected point is outside the solar disk. Uncheck 'Disable Boundary Check' or pick a point inside.")
+        st.write(f"**Debug:** x = {x_disp:.1f}, y = {y_disp:.1f}, center = ({adjusted_cx:.1f}, {adjusted_cy:.1f}), radius = {scaled_radius * radius_correction:.1f}")
+        return False
+
 # ------------------------------------------------------------------
 #                         STREAMLIT APP
 # ------------------------------------------------------------------
@@ -272,13 +330,15 @@ if 'zoom_size' not in st.session_state:
     st.session_state['zoom_size'] = 60
 if 'zoom_factor' not in st.session_state:
     st.session_state['zoom_factor'] = 4
+if 'canvas_coordinates' not in st.session_state:
+    st.session_state['canvas_coordinates'] = None
 
 # Title & instructions
 st.title("Advanced Solar Rotation Analysis")
 st.write("""
 **How to Use**  
 1. Upload your solar images (FITS recommended) in the sidebar.  
-2. If your FITS has solar disk keywords (`FNDLMBXC`, etc.), enable "Force FITS header data."  
+2. If your FITS has solar disk keywords (FNDLMBXC, etc.), enable "Force FITS header data."  
 3. Otherwise, or if header data are missing, set "Detect Sun Edge" and adjust "Contour Threshold" to refine the boundary.  
 4. Pause animation to measure sunspots with either "Rectangle Selection" or "Point Selection."  
 5. Heliographic coordinates are computed with SunPy (fallback if that fails).  
@@ -439,9 +499,31 @@ if show_sun_boundary and cx is not None:
 # Left column: Main image/canvas
 with left_col:
     st.subheader(f"Current Image: {current_filename}")
-    if st.session_state['animation_running']:
+    is_fits_file = current_filename.lower().endswith((".fits", ".fit"))
+    
+    if st.session_state['animation_running'] or is_fits_file:
+        # Just display the image for FITS files or during animation
         st.image(resized_img, use_column_width=False, width=resized_img.width)
+        
+        # If not animating but it's a FITS file, create a separate canvas for drawing
+        if not st.session_state['animation_running'] and is_fits_file:
+            drawing_mode = st.session_state['selection_mode']
+            canvas_result = st_canvas(
+                fill_color="rgba(255,0,255,0.3)",
+                stroke_width=2,
+                stroke_color="#FF00FF",
+                background_color="rgba(0,0,0,0)",  # Transparent background
+                height=resized_img.height,
+                width=resized_img.width,
+                drawing_mode=drawing_mode,
+                key="canvas_measurement"
+            )
+            
+            # Store the canvas data for processing
+            if canvas_result.json_data and 'objects' in canvas_result.json_data and canvas_result.json_data['objects']:
+                st.session_state['canvas_coordinates'] = canvas_result.json_data['objects'][-1]
     else:
+        # Normal approach for non-FITS files
         drawing_mode = st.session_state['selection_mode']
         canvas_result = st_canvas(
             fill_color="rgba(255,0,255,0.3)",
@@ -454,6 +536,9 @@ with left_col:
             drawing_mode=drawing_mode,
             key="canvas_measurement"
         )
+        
+        # Clear any stored coordinates 
+        st.session_state['canvas_coordinates'] = None
 
 # Right column: Data, measurements, and (if applicable) the zoom viewer
 with right_col:
@@ -461,8 +546,20 @@ with right_col:
     
     with measure_tab:
         # When not animating and a selection has been made
-        if not st.session_state['animation_running'] and 'canvas_result' in locals():
-            if canvas_result.json_data:
+        if not st.session_state['animation_running']:
+            has_selection = False
+            
+            # For FITS files, use stored coordinates
+            if is_fits_file and st.session_state['canvas_coordinates']:
+                objs = [st.session_state['canvas_coordinates']]
+                if drawing_mode == 'rect':
+                    x_disp, y_disp = calculate_selection_center(objs[-1])
+                else:
+                    x_disp = objs[-1].get("left", 0)
+                    y_disp = objs[-1].get("top", 0)
+                has_selection = True
+            # For non-FITS files, use canvas_result directly
+            elif not is_fits_file and 'canvas_result' in locals() and canvas_result.json_data:
                 objs = canvas_result.json_data.get("objects", [])
                 if objs:
                     if drawing_mode == 'rect':
@@ -470,60 +567,27 @@ with right_col:
                     else:
                         x_disp = objs[-1].get("left", 0)
                         y_disp = objs[-1].get("top", 0)
-                    
-                    # Check boundary using adjusted values
-                    adjusted_cx = scaled_cx + center_x_offset
-                    adjusted_cy = scaled_cy + center_y_offset
-                    if disable_boundary_check or is_point_on_sun(
-                        x_disp, y_disp,
-                        scaled_cx, scaled_cy,
-                        scaled_radius,
-                        radius_correction=radius_correction,
-                        x_offset=center_x_offset,
-                        y_offset=center_y_offset
-                    ):
-                        st.write(f"**Display coords:** x = {x_disp:.2f}, y = {y_disp:.2f}")
-                        x_orig = x_disp / ratio
-                        y_orig = y_disp / ratio
-                        st.write(f"**Original coords:** x = {x_orig:.2f}, y = {y_orig:.2f}")
-                        lon, lat = accurate_pixel_to_heliographic(x_orig, y_orig, cx, cy, radius, obs_time)
-                        st.write(f"**Heliographic:** Lon = {lon:.2f}°, Lat = {lat:.2f}°")
-                        dist = np.hypot(x_orig - cx, y_orig - cy)
-                        st.write(f"**Distance from center:** {dist:.1f} px ({dist/radius*100:.1f}% of radius)")
-                        
-                        st.write("---")
-                        # NEW: Display the zoom viewer only when a selection is made
-                        zoom_img, (zleft, ztop) = extract_zoom_region(orig_img, x_orig, y_orig,
-                                                                       zoom_size=st.session_state['zoom_size'],
-                                                                       zoom_factor=st.session_state['zoom_factor'])
-                        final_zoom = add_crosshair(zoom_img)
-                        zoom_col, data_col = st.columns([1, 1])
-                        with zoom_col:
-                            st.image(final_zoom, caption="Zoomed Region")
-                        with data_col:
-                            st.write("### Measurement Data")
-                            st.write(f"**Observation Time:** {obs_time.iso if obs_time else 'Unknown'}")
-                            st.write(f"**Heliographic Coordinates:** Lon = {lon:.2f}°, Lat = {lat:.2f}°")
-                            st.write(f"**Pixel Coords (Original):** ({x_orig:.2f}, {y_orig:.2f})")
-                            label = st.text_input("Feature label:", value="", key="label_input")
-                            if st.button("Record Measurement", key="record_btn"):
-                                measurement = {
-                                    "Image": current_filename,
-                                    "Observation Time": obs_time.iso if obs_time else "Unknown",
-                                    "Pixel X (orig)": x_orig,
-                                    "Pixel Y (orig)": y_orig,
-                                    "Helio Longitude": lon,
-                                    "Helio Latitude": lat,
-                                    "Distance (% radius)": dist/radius*100,
-                                    "Label": label
-                                }
-                                st.session_state['measurements'].append(measurement)
-                                st.success("Measurement recorded!")
-                    else:
-                        st.warning("Selected point is outside the solar disk. Uncheck 'Disable Boundary Check' or pick a point inside.")
-                        st.write(f"**Debug:** x = {x_disp:.1f}, y = {y_disp:.1f}, center = ({adjusted_cx:.1f}, {adjusted_cy:.1f}), radius = {scaled_radius * radius_correction:.1f}")
-                else:
-                    st.info("Draw a selection on the image to measure solar features.")
+                    has_selection = True
+            
+            if has_selection:
+                # Process the selection data
+                check_canvas_data(
+                    canvas_result=None,  # Not needed for the check function
+                    x_disp=x_disp,
+                    y_disp=y_disp,
+                    scaled_cx=scaled_cx,
+                    scaled_cy=scaled_cy,
+                    scaled_radius=scaled_radius,
+                    radius_correction=radius_correction,
+                    center_x_offset=center_x_offset,
+                    center_y_offset=center_y_offset,
+                    disable_boundary_check=disable_boundary_check,
+                    ratio=ratio,
+                    cx=cx,
+                    cy=cy,
+                    radius=radius,
+                    obs_time=obs_time
+                )
             else:
                 st.info("Draw a selection on the image to measure solar features.")
         else:
