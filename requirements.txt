@@ -8,4 +8,4 @@ astropy>=6.0
 sunpy>=4.3.0
 matplotlib>=3.7.0
 scipy>=1.10.0
-scikit-image==0.19.3
+scikit-image>=1.0.0,<2.0
